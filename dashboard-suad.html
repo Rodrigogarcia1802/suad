@@ -124,7 +124,21 @@ header {
 .btn-import:hover { opacity: .88; }
 .btn-import svg { flex-shrink: 0; }
 
-#file-input { display: none; }
+.btn-clear-data {
+  background: none;
+  border: 1px solid rgba(255,255,255,.3);
+  border-radius: 7px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255,255,255,.6);
+  transition: all .15s;
+  letter-spacing: .3px;
+}
+.btn-clear-data:hover {
+  border-color: rgba(255,255,255,.6);
+  color: #fff;
+}
 
 /* =========================================================
    UPLOAD SCREEN
@@ -473,6 +487,35 @@ td.td-num {
   font-size: 12px;
   white-space: nowrap;
 }
+td.td-num a {
+  color: var(--primary);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: color .15s;
+}
+td.td-num a:hover {
+  color: var(--gold);
+  text-decoration: underline;
+}
+td.td-num a::after {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  background: var(--primary-xlt);
+  border-radius: 2px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%231E3A5F' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/%3E%3Cpolyline points='15 3 21 3 21 9'/%3E%3Cline x1='10' y1='14' x2='21' y2='3'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 7px;
+  flex-shrink: 0;
+}
+td.td-num a:hover::after {
+  background-color: var(--gold-lt);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 24 24' fill='none' stroke='%23C8960C' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/%3E%3Cpolyline points='15 3 21 3 21 9'/%3E%3Cline x1='10' y1='14' x2='21' y2='3'/%3E%3C/svg%3E");
+}
 td.td-dias {
   font-family: var(--font-cd);
   font-size: 16px;
@@ -611,7 +654,10 @@ tr.row-judicial:hover{ background: #EEE5FF; }
         <polyline points="17 8 12 3 7 8"/>
         <line x1="12" y1="3" x2="12" y2="15"/>
       </svg>
-      Importar CSV
+      Atualizar CSV
+    </button>
+    <button class="btn-clear-data" id="btn-clear-data" onclick="clearDashboard()" title="Limpar dados salvos e voltar à tela inicial" style="display:none">
+      Limpar
     </button>
     <input type="file" id="file-input" accept=".csv">
   </div>
@@ -750,6 +796,7 @@ const C = {
   alertaJ    : 'Alerta Judicial',
   area       : 'Área Administrativa',
   statusRet  : 'Status do Retorno',
+  urlSigadoc : 'URL SIGADOC',
 };
 
 const COORDS_SUB = [
@@ -827,6 +874,50 @@ function buildRecords(rows) {
 }
 
 /* =====================================================
+   PERSISTÊNCIA – localStorage
+   ===================================================== */
+const SK_DATA = 'suad_csv_data';
+const SK_TS   = 'suad_csv_ts';
+const SK_NAME = 'suad_csv_name';
+
+function saveToStorage(csvText, filename) {
+  try {
+    localStorage.setItem(SK_DATA, csvText);
+    localStorage.setItem(SK_TS,   new Date().toISOString());
+    localStorage.setItem(SK_NAME, filename || 'planilha.csv');
+  } catch(e) {
+    console.warn('Não foi possível salvar no localStorage:', e.message);
+  }
+}
+
+function loadFromStorage() {
+  try {
+    const data = localStorage.getItem(SK_DATA);
+    const ts   = localStorage.getItem(SK_TS);
+    const name = localStorage.getItem(SK_NAME);
+    if (data) return { data, ts, name };
+  } catch(e) {}
+  return null;
+}
+
+function clearStorage() {
+  try {
+    localStorage.removeItem(SK_DATA);
+    localStorage.removeItem(SK_TS);
+    localStorage.removeItem(SK_NAME);
+  } catch(e) {}
+}
+
+function formatStorageTS(isoStr) {
+  if (!isoStr) return '';
+  try {
+    const d = new Date(isoStr);
+    return d.toLocaleDateString('pt-BR') + ' às ' +
+      d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  } catch(e) { return ''; }
+}
+
+/* =====================================================
    CARREGAMENTO DO ARQUIVO
    ===================================================== */
 function loadFile(file) {
@@ -837,13 +928,15 @@ function loadFile(file) {
   const reader = new FileReader();
   reader.onload = ev => {
     try {
-      const rows = parseCSV(ev.target.result);
+      const csvText = ev.target.result;
+      const rows = parseCSV(csvText);
       ALL = buildRecords(rows);
       if (!ALL.length) {
         alert('Nenhum registro encontrado. Confirme se o CSV foi exportado da aba "Controle de Processos".');
         return;
       }
-      boot();
+      saveToStorage(csvText, file.name);
+      boot(file.name, new Date().toISOString());
     } catch (e) {
       alert('Erro ao processar o arquivo: ' + e.message);
     }
@@ -867,17 +960,52 @@ document.getElementById('file-input').addEventListener('change', e => {
 /* =====================================================
    BOOT
    ===================================================== */
-function boot() {
+function boot(filename, tsISO) {
   document.getElementById('screen-upload').style.display = 'none';
   document.getElementById('screen-dash').style.display   = 'block';
+  document.getElementById('btn-clear-data').style.display = 'block';
 
-  const now = new Date();
-  document.getElementById('hdr-ts').textContent =
-    'Carregado em ' + now.toLocaleDateString('pt-BR') + ' às ' +
-    now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const el = document.getElementById('hdr-ts');
+  el.dataset.loaded = '1';
+  const tsLabel = tsISO ? formatStorageTS(tsISO) : '';
+  const nameLabel = filename ? filename.replace('.csv','') : '';
+  el.innerHTML = tsLabel
+    ? `<span title="${nameLabel}">Atualizado em ${tsLabel}</span>`
+    : '';
 
   populateFilters();
   applyFilters();
+}
+
+/* =====================================================
+   INICIALIZAÇÃO AUTOMÁTICA (dados salvos)
+   ===================================================== */
+(function initAuto() {
+  const saved = loadFromStorage();
+  if (!saved) return;
+  try {
+    const rows = parseCSV(saved.data);
+    ALL = buildRecords(rows);
+    if (ALL.length) {
+      document.getElementById('btn-clear-data').style.display = 'block';
+      boot(saved.name, saved.ts);
+    } else {
+      clearStorage();
+    }
+  } catch(e) {
+    clearStorage();
+  }
+})();
+
+function clearDashboard() {
+  if (!confirm('Remover os dados salvos e voltar à tela de importação?')) return;
+  clearStorage();
+  ALL = []; FILT = [];
+  document.getElementById('screen-dash').style.display   = 'none';
+  document.getElementById('screen-upload').style.display = 'flex';
+  document.getElementById('btn-clear-data').style.display = 'none';
+  document.getElementById('hdr-ts').textContent = '';
+  delete document.getElementById('hdr-ts').dataset.loaded;
 }
 
 /* =====================================================
@@ -1143,7 +1271,7 @@ function renderTableBody() {
     else if (jud) rowCls = 'row-judicial';
 
     return `<tr class="${rowCls}">
-      <td class="td-num">${esc(r[C.numero] || '')}</td>
+      <td class="td-num">${renderNumero(r)}</td>
       <td>${badgeTipo(r[C.tipo] || '')}</td>
       <td style="white-space:nowrap">${esc(r[C.entrada] || '')}</td>
       <td class="td-wrap" title="${esc(r[C.assunto] || '')}">${esc(trunc(r[C.assunto] || '', 58))}</td>
@@ -1184,6 +1312,18 @@ function renderPagination(cur, total) {
   s = Math.max(1, e - 4);
   for (let p = s; p <= e; p++) add(p, p, p === cur, false);
   add('Próx. ›', cur + 1, false, cur === total);
+}
+
+/* =====================================================
+   RENDER NÚMERO COM HIPERLINK
+   ===================================================== */
+function renderNumero(r) {
+  const num = r[C.numero] || '';
+  const url = r[C.urlSigadoc] || '';
+  if (url) {
+    return `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="Abrir no SIGADOC">${esc(num)}</a>`;
+  }
+  return esc(num);
 }
 
 /* =====================================================
