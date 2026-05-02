@@ -489,7 +489,7 @@ function clearDash(){if(!confirm('Remover dados salvos?'))return;clearSt();ALL=[
 document.querySelectorAll('.tab-btn').forEach(b=>{b.addEventListener('click',()=>{document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.tab-content').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.getElementById('tab-'+b.dataset.tab).classList.add('active');if(b.dataset.tab==='analise')renderAnalise();updURL();});});
 
 /* FILTERS */
-function populateFilters(){['flt-status','flt-resp','flt-area','flt-coord'].forEach(id=>{const col={flt-status:C.status,'flt-resp':C.responsavel,'flt-area':C.area,'flt-coord':C.coord}[id];const sel=document.getElementById(id),first=sel.options[0];sel.innerHTML='';sel.appendChild(first);[...new Set(ALL.map(r=>r[col]).filter(Boolean))].sort().forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v.length>50?v.slice(0,48)+'…':v;sel.appendChild(o);});});}
+function populateFilters(){const colMap={'flt-status':C.status,'flt-resp':C.responsavel,'flt-area':C.area,'flt-coord':C.coord};['flt-status','flt-resp','flt-area','flt-coord'].forEach(id=>{const col=colMap[id];const sel=document.getElementById(id),first=sel.options[0];sel.innerHTML='';sel.appendChild(first);[...new Set(ALL.map(r=>r[col]).filter(Boolean))].sort().forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v.length>50?v.slice(0,48)+'…':v;sel.appendChild(o);});});}
 
 function getF(){return{status:document.getElementById('flt-status').value,resp:document.getElementById('flt-resp').value,area:document.getElementById('flt-area').value,coord:document.getElementById('flt-coord').value,de:document.getElementById('flt-de').value,ate:document.getElementById('flt-ate').value,q:document.getElementById('flt-search').value.toLowerCase().trim()};}
 
@@ -562,7 +562,7 @@ function renderTblBody(){
   document.getElementById('tbl-body').innerHTML=slice.map((r,i)=>{
     const al=r[C.alerta]||'',aj=r[C.alertaJ]||'',jud=(r[C.judicial]||'').toLowerCase()==='sim';
     let rc='';if(al.includes('🔴')||aj.includes('VENCIDO'))rc='rd';else if(al.includes('🟡')||aj.includes('PRÓXIMO'))rc='rw';else if(jud)rc='rj';
-    return'<tr class="'+rc+'" onclick="openDrawer('+start+i+')">'
+    return'<tr class="'+rc+'" onclick="openDrawer('+(start+i)+')">'
       +'<td class="tdn">'+rNum(r)+'</td>'
       +'<td>'+bTipo(r[C.tipo]||'')+'</td>'
       +'<td style="white-space:nowrap">'+esc(r[C.entrada]||'')+'</td>'
