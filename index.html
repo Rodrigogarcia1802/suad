@@ -223,6 +223,32 @@ tr.rd{background:#FFF5F5}tr.rd:hover{background:#FEE8E8}tr.rw{background:#FFFBEF
 #voice-ind.vis{display:flex}
 .vdot{width:7px;height:7px;background:var(--danger);border-radius:50%;animation:pls 1s infinite}
 @keyframes pls{0%,100%{opacity:1}50%{opacity:.3}}
+/* DISTRIBUIÇÃO POR SERVIDOR */
+.dist-serv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:11px;margin-bottom:5px}
+.ds-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 16px;cursor:pointer;transition:all .15s;position:relative;overflow:hidden}
+.ds-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-md);border-color:var(--primary-light)}
+.ds-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--primary)}
+.ds-card.ds-danger::before{background:var(--danger)}
+.ds-card.ds-warning::before{background:var(--warning)}
+.ds-card.ds-ok::before{background:var(--success)}
+.ds-name{font-family:var(--font-cd);font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ds-counts{display:flex;align-items:flex-end;gap:14px;margin-bottom:10px}
+.ds-main{font-family:var(--font-cd);font-size:40px;font-weight:800;line-height:1;color:var(--primary)}
+.ds-main.ds-danger{color:var(--danger)}
+.ds-main.ds-warning{color:var(--warning)}
+.ds-main.ds-ok{color:var(--success)}
+.ds-lbl{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;line-height:1.3;padding-bottom:4px}
+.ds-detail{display:flex;gap:10px;flex-wrap:wrap}
+.ds-chip{font-size:10.5px;font-family:var(--font-cd);font-weight:700;padding:2px 8px;border-radius:4px;white-space:nowrap}
+.ds-chip-venc{background:var(--danger-lt);color:var(--danger)}
+.ds-chip-jud{background:var(--primary-xlt);color:var(--primary)}
+.ds-chip-total{background:var(--neutral-lt);color:var(--muted)}
+.ds-bar-wrap{height:5px;background:var(--border);border-radius:3px;overflow:hidden;margin-top:8px}
+.ds-bar{height:100%;border-radius:3px;transition:width .6s}
+.ds-empty{text-align:center;padding:32px;color:var(--muted);font-size:13px;grid-column:1/-1}
+.ds-legenda{font-size:11px;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.ds-leg-item{display:flex;align-items:center;gap:5px}
+.ds-leg-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
 /* FOOTER */
 footer{background:var(--primary);color:rgba(255,255,255,.4);text-align:center;padding:13px 20px;font-size:11px;letter-spacing:.3px;margin-top:10px}
 footer strong{color:rgba(255,255,255,.65);font-weight:600}
@@ -305,6 +331,13 @@ footer strong{color:rgba(255,255,255,.65);font-weight:600}
       <div class="kpi-grid" id="kpi-grid"></div>
       <div class="sec-label" style="margin-top:15px">Coordenadorias Subordinadas</div>
       <div class="coord-grid" id="coord-grid"></div>
+      <div class="sec-label" style="margin-top:15px">Distribuição — Processos com a SUAD por Servidor <span style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— somente processos em análise ou validação na SUAD · clique no card para filtrar</span></div>
+      <div class="ds-legenda">
+        <div class="ds-leg-item"><div class="ds-leg-dot" style="background:var(--danger)"></div>Sobrecarga (acima da média)</div>
+        <div class="ds-leg-item"><div class="ds-leg-dot" style="background:var(--warning)"></div>Atenção (próximo da média)</div>
+        <div class="ds-leg-item"><div class="ds-leg-dot" style="background:var(--success)"></div>Equilibrado</div>
+      </div>
+      <div class="dist-serv-grid" id="dist-serv-grid"></div>
       <div class="sec-label" style="margin-top:15px">Distribuição</div>
       <div class="charts-row">
         <div class="chart-card"><h4>Por Status</h4><div class="chart-box"><canvas id="ch-status"></canvas></div></div>
@@ -434,11 +467,51 @@ const pDate=s=>{if(!s)return null;if(s instanceof Date)return s;const p=s.split(
 const fDate=s=>{const d=pDate(s);return d?d.toLocaleDateString('pt-BR'):s||'';};
 const today=()=>new Date().toISOString().slice(0,10);
 
-/* STORAGE */
-function saveSt(csv,name){try{localStorage.setItem(SK,csv);localStorage.setItem(SKT,new Date().toISOString());localStorage.setItem(SKN,name||'planilha.csv');}catch(e){}}
-function loadSt(){try{const d=localStorage.getItem(SK),t=localStorage.getItem(SKT),n=localStorage.getItem(SKN);if(d)return{data:d,ts:t,name:n};}catch(e){}return null;}
-function clearSt(){try{localStorage.removeItem(SK);localStorage.removeItem(SKT);localStorage.removeItem(SKN);}catch(e){}}
-function fmtTS(iso){if(!iso)return'';try{const d=new Date(iso);return d.toLocaleDateString('pt-BR')+' às '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});}catch(e){return'';}}
+/* STORAGE — CSV primário, JSON compacto como fallback quando CSV excede limite */
+const SKJ='suad_json_fb'; // chave fallback JSON
+function saveSt(csv,name){
+  const ts=new Date().toISOString(),nm=name||'planilha.csv';
+  // Tentativa 1: salvar CSV bruto (mais rápido para restaurar)
+  try{
+    localStorage.setItem(SK,csv);
+    localStorage.setItem(SKT,ts);
+    localStorage.setItem(SKN,nm);
+    localStorage.removeItem(SKJ); // limpa fallback antigo
+    return;
+  }catch(e){}
+  // Tentativa 2: CSV muito grande — salvar registros JSON compactos
+  try{
+    localStorage.removeItem(SK); // libera espaço
+    // Formato compacto: {h:[headers], r:[[valores]]} — evita repetir nomes de campo
+    const hdrs=Object.keys(ALL[0]||{});
+    const compact=JSON.stringify({h:hdrs,r:ALL.map(rec=>hdrs.map(h=>rec[h]||''))});
+    localStorage.setItem(SKJ,compact);
+    localStorage.setItem(SKT,ts);
+    localStorage.setItem(SKN,nm);
+    showStorageBanner('aviso');
+    return;
+  }catch(e){}
+  // Tentativa 3: tudo falhou — avisar o usuário
+  showStorageBanner('erro');
+}
+function loadSt(){
+  try{
+    const t=localStorage.getItem(SKT),n=localStorage.getItem(SKN);
+    const csv=localStorage.getItem(SK);
+    if(csv)return{data:csv,ts:t,name:n,fmt:'csv'};
+    const jsn=localStorage.getItem(SKJ);
+    if(jsn)return{data:jsn,ts:t,name:n,fmt:'json'};
+  }catch(e){}
+  return null;
+}
+function clearSt(){try{[SK,SKT,SKN,SKJ].forEach(k=>localStorage.removeItem(k));}catch(e){}}
+function fmtTS(iso){if(!iso)return'';try{const d=new Date(iso);return d.toLocaleDateString('pt-BR')+' às '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});}catch(e){return '';}}
+function showStorageBanner(tipo){
+  let b=document.getElementById('storage-banner');
+  if(!b){b=document.createElement('div');b.id='storage-banner';b.style.cssText='position:fixed;bottom:0;left:0;right:0;z-index:700;padding:10px 20px;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:12px;box-shadow:0 -2px 12px rgba(0,0,0,.15)';document.body.appendChild(b);}
+  if(tipo==='aviso'){b.style.background='#78530A';b.style.color='#FEF3C7';b.innerHTML='⚠️ O arquivo CSV é grande demais para ser salvo completo. Os dados foram comprimidos e serão restaurados normalmente ao reabrir o navegador. Para garantir persistência total, mantenha o CSV original disponível para reimportar quando necessário. <button onclick="this.parentElement.remove()" style="background:rgba(255,255,255,.2);border:none;border-radius:5px;padding:4px 10px;color:inherit;cursor:pointer;font-weight:700;flex-shrink:0">✕ Fechar</button>';}
+  else{b.style.background='#7F1D1D';b.style.color='#FEE2E2';b.innerHTML='🔴 O armazenamento local está cheio. Os dados NÃO serão persistidos ao fechar o navegador. Exporte um CSV manualmente antes de fechar, ou libere espaço no navegador. <button onclick="this.parentElement.remove()" style="background:rgba(255,255,255,.2);border:none;border-radius:5px;padding:4px 10px;color:inherit;cursor:pointer;font-weight:700;flex-shrink:0">✕ Fechar</button>';}
+}
 
 /* CSV */
 function parseCSV(raw){const rows=[];let row=[],cell='',q=false;
@@ -482,7 +555,20 @@ function boot(name,tsISO){
   el.textContent=tsISO?'Atualizado em '+fmtTS(tsISO):'';
   populateFilters();applyFilters();renderUrgencias();
 }
-(function initAuto(){const s=loadSt();if(!s)return;try{const r=parseCSV(s.data),d=buildRecs(r);if(d.length){ALL=d;boot(s.name,s.ts);}else clearSt();}catch(e){clearSt();}})();
+(function initAuto(){
+  const s=loadSt();if(!s)return;
+  try{
+    let d;
+    if(s.fmt==='json'){
+      // Restaurar do formato compacto {h, r}
+      const obj=JSON.parse(s.data);
+      if(obj.h&&obj.r){d=obj.r.map(row=>{const o={};obj.h.forEach((h,i)=>o[h]=row[i]||'');return o;});}
+    }else{
+      const r=parseCSV(s.data);d=buildRecs(r);
+    }
+    if(d&&d.length){ALL=d;boot(s.name,s.ts);}else clearSt();
+  }catch(e){clearSt();}
+})();
 function clearDash(){if(!confirm('Remover dados salvos?'))return;clearSt();ALL=[];FILT=[];document.getElementById('screen-dash').style.display='none';document.getElementById('screen-upload').style.display='flex';document.getElementById('btn-clear-data').style.display='none';document.getElementById('hdr-ts').textContent='';delete document.getElementById('hdr-ts').dataset.loaded;}
 
 /* TABS */
@@ -506,7 +592,7 @@ function applyFilters(){
   });
   curPg=1;
   document.getElementById('result-pill').innerHTML='<strong>'+FILT.length+'</strong> de '+ALL.length+' processo(s)';
-  renderKPIs();renderCoords();renderCharts();renderTable();updURL();
+  renderKPIs();renderCoords();renderDistServ();renderCharts();renderTable();updURL();
 }
 ['flt-status','flt-resp','flt-area','flt-coord','flt-de','flt-ate'].forEach(id=>document.getElementById(id).addEventListener('change',applyFilters));
 document.getElementById('flt-search').addEventListener('input',applyFilters);
@@ -538,6 +624,54 @@ function renderKPIs(){
     {l:'Sobrestados',v:sb,c:'cn',s:'aguardam fato externo'},{l:'Demandas Judiciais',v:ju,c:'cb',s:'identificadas'},
     {l:'Judiciais Vencidas',v:jv,c:'cd',s:'prazo expirado'},{l:'Sem Responsável',v:sr,c:'cw',s:'aguardam atribuição'},
   ].map(k=>'<div class="kpi '+k.c+'"><div class="kpi-lbl">'+k.l+'</div><div class="kpi-val">'+k.v+'</div><div class="kpi-sub">'+k.s+'</div></div>').join('');
+}
+
+/* DISTRIBUIÇÃO POR SERVIDOR — apenas processos com a SUAD (análise ou validação) */
+function isComSUAD(r){const fa=r[C.fase]||'',st=(r[C.status]||'').toLowerCase();return fa.toLowerCase().includes('análise')||fa.toLowerCase().includes('validação')||(fa.toLowerCase().includes('suad')&&!fa.toLowerCase().includes('coordenadoria'));}
+function renderDistServ(){
+  // Filtra apenas processos atualmente COM A SUAD (análise ou validação)
+  const comSUAD=FILT.filter(r=>isComSUAD(r));
+  const srv={};
+  comSUAD.forEach(r=>{
+    const n=r[C.responsavel]||'Sem responsável';
+    if(!srv[n])srv[n]={tot:0,venc:0,jud:0,nomes:[]};
+    srv[n].tot++;
+    if((r[C.alerta]||'').includes('🔴'))srv[n].venc++;
+    if((r[C.judicial]||'').toLowerCase()==='sim')srv[n].jud++;
+    srv[n].nomes.push(r[C.numero]||'');
+  });
+  const sorted=Object.entries(srv).sort((a,b)=>b[1].tot-a[1].tot);
+  const grid=document.getElementById('dist-serv-grid');
+  if(!sorted.length){grid.innerHTML='<div class="ds-empty">Nenhum processo com a SUAD em análise ou validação no momento.</div>';return;}
+  const totais=sorted.map(([,s])=>s.tot);
+  const max=Math.max(...totais),media=totais.reduce((a,b)=>a+b,0)/totais.length;
+  grid.innerHTML=sorted.map(([nm,s])=>{
+    const pct=max>0?Math.round(s.tot/max*100):0;
+    // Classificação: acima de 130% da média = sobrecarga, acima de 100% = atenção, senão ok
+    const cls=s.tot>media*1.3?'ds-danger':s.tot>media*1.0?'ds-warning':'ds-ok';
+    const barCol=cls==='ds-danger'?'var(--danger)':cls==='ds-warning'?'var(--warning)':'var(--success)';
+    const numCls=cls==='ds-danger'?'ds-danger':cls==='ds-warning'?'ds-warning':'ds-ok';
+    return'<div class="ds-card '+cls+'" onclick="filtrarPorServidor(\''+esc(nm)+'\')" title="Clique para filtrar por '+esc(nm)+'">'
+      +'<div class="ds-name" title="'+esc(nm)+'">'+esc(nm)+'</div>'
+      +'<div class="ds-counts">'
+        +'<div><div class="ds-main '+numCls+'">'+s.tot+'</div></div>'
+        +'<div class="ds-lbl">processo(s)<br>com a SUAD</div>'
+      +'</div>'
+      +'<div class="ds-detail">'
+        +(s.venc>0?'<span class="ds-chip ds-chip-venc">'+s.venc+' vencido(s)</span>':'')
+        +(s.jud>0?'<span class="ds-chip ds-chip-jud">'+s.jud+' judicial</span>':'')
+        +'<span class="ds-chip ds-chip-total">'+comSUAD.length+' total SUAD</span>'
+      +'</div>'
+      +'<div class="ds-bar-wrap"><div class="ds-bar" style="width:'+pct+'%;background:'+barCol+'"></div></div>'
+      +'</div>';
+  }).join('');
+}
+function filtrarPorServidor(nome){
+  // Filtra a tabela por responsável e status na SUAD
+  document.getElementById('flt-resp').value=nome;
+  applyFilters();
+  // Rola até a tabela
+  document.querySelector('.table-card')?.scrollIntoView({behavior:'smooth',block:'start'});
 }
 
 /* COORDS */
